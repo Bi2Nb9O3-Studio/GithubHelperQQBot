@@ -10,7 +10,15 @@ import os
 import requests,dotenv
 dotenv.load_dotenv()
 
-gh=requests.sessions.Session()
+class SessionWithCatch(requests.Session):
+    def request(self, *args, **kwargs):
+        try:
+            return super().request(*args, **kwargs)
+        except requests.RequestException as e:
+            print(f"HTTP Request failed: {e}")
+            return None
+
+gh=SessionWithCatch()
 gh.headers.update({
     "Authorization": f"Bearer {os.getenv('GITHUB_TOKEN')}",
     "Accept": "application/vnd.github.v3+json",
