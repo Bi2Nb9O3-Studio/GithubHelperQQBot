@@ -1,0 +1,8 @@
+/data
+/logs
+/plugins
+config.yaml
+.env
+visited_event.json
+latest_issue_num.txt
+.venv
