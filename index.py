@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+from math import comb, e
 import re
 import time
 from ncatbot.core import BotClient
@@ -16,7 +17,7 @@ class SessionWithCatch(requests.Session):
             return super().request(*args, **kwargs)
         except requests.RequestException as e:
             print(f"HTTP Request failed: {e}")
-            return None
+            return requests.Response()
 
 gh=SessionWithCatch()
 gh.headers.update({
@@ -195,24 +196,60 @@ while True:
     if events_resp.status_code == 200:
         events = events_resp.json()
         events_local = json.load(open("./visited_event.json", "r",encoding="utf-8"))
+        issue_event_map={}
         for event in events:
             if event["id"] in events_local:
                 continue
+            message=""
             if event["event"] in ["closed","reopened","merged"]:
-                prefix={
-                    "closed":"有 PR/Issue 关闭了\n\n",
-                    "reopened":"有 PR/Issue 被重新打开了\n\n",
-                    "merged":"有 PR 被合并了\n\n",
+                # prefix={
+                #     "closed":"有 PR/Issue 关闭了\n\n",
+                #     "reopened":"有 PR/Issue 被重新打开了\n\n",
+                #     "merged":"有 PR 被合并了\n\n",
+                # }
+                # if issue := generate_msg_of_number(event["issue"]["number"]):
+                #     api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message=prefix[event["event"]]+issue)
+                closed_reasoned={
+                    None:"",
+                    "not_planned":"因非计划而",
+                    "duplicated":"因重复而",
+                    "completed":"因完成而",
                 }
-                if issue := generate_msg_of_number(event["issue"]["number"]):
-                    api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message=prefix[event["event"]]+issue)
-            if event['event'] == "labeled" and event['label']['name'] == "💡 Accept":
-                if issue := generate_msg_of_number(event["issue"]["number"]):
-                    api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message="有 Enhancement Issue 被接受了\n\n"+issue)
-            if event['event'] == "labeled" and event['label']['name'] == "⭕ Confirmed":
-                if issue := generate_msg_of_number(event["issue"]["number"]):
-                    api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message="有 Bug Issue 被确认了\n\n"+issue)
+                message={'closed': closed_reasoned[event['state_reason']]+'关闭了',
+                    'reopened': '重新打开了', 'merged': '合并了'}[event['event']]
+            if event['event'] == "labeled":
+            # and event['label']['name'] == "💡 Accept":
+            #     if issue := generate_msg_of_number(event["issue"]["number"]):
+            #         api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message="有 Enhancement Issue 被接受了\n\n"+issue)
+            # if event['event'] == "labeled" and event['label']['name'] == "⭕ Confirmed":
+            #     if issue := generate_msg_of_number(event["issue"]["number"]):
+            #         api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message="有 Bug Issue 被确认了\n\n"+issue)
+                label_specials={
+                    "💡 Accept":"接受了",
+                    "⭕ Confirmed":"确认了",
+                }
+                if event['label']['name'] in label_specials:
+                    message = f"{label_specials[event['label']['name']]}"
+                else:
+                    message = f"添加了标签 {event['label']['name']}"
+            if event['event']=="convert_to_draft":
+                message = f"转换为草稿状态"
+            if event['event']=="ready_for_review":
+                message = f"标记为准备好Review了"
+            
+            issue_event_map.setdefault(event["issue"]["number"],[]).append((event['actor']['login'],message))
             events_local.append(event["id"])
+        for issue_number in issue_event_map:
+            actor_event_maps={}
+            for actor,message in issue_event_map[issue_number]:
+                actor_event_maps.setdefault(actor,[]).append(message)
+            combined_messages=[]
+            for actor in actor_event_maps:
+                cm = f"被 {event['actor']['login']} " + "，".join(actor_event_maps[actor])
+                combined_messages.append(cm)
+            if issue := generate_msg_of_number(issue_number):
+                api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message=f"#{issue_number} {','.join(combined_messages)}\n\n"+issue)
+                
         with open("./visited_event.json","w",encoding="utf-8") as f:
             f.write(json.dumps(events_local))
     issues=gh.get(f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues")
