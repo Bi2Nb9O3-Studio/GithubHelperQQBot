@@ -1,15 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
-from math import comb, e
 import re
 import time
 from ncatbot.core import BotClient
-# from ncatbot.core.event.message import MessageArray
 from ncatbot.plugin_system import on_message
 import os
 
-import requests,dotenv
+import requests
+import dotenv
 dotenv.load_dotenv()
+
 
 class SessionWithCatch(requests.Session):
     def request(self, *args, **kwargs):
@@ -19,12 +19,14 @@ class SessionWithCatch(requests.Session):
             print(f"HTTP Request failed: {e}")
             return requests.Response()
 
-gh=SessionWithCatch()
+
+gh = SessionWithCatch()
 gh.headers.update({
     "Authorization": f"Bearer {os.getenv('GITHUB_TOKEN')}",
     "Accept": "application/vnd.github.v3+json",
     "X-GitHub-Api-Version": "2022-11-28"
 })
+
 
 def format_github_item_simple(item_data):
     """
@@ -83,8 +85,8 @@ def format_github_item_simple(item_data):
     # 时间格式化
     created_at = item_data.get('created_at', '')
     try:
-        created_time = datetime.fromisoformat(
-            created_at.replace('Z', '+00:00')).strftime("%m-%d %H:%M")
+        created_time = (datetime.fromisoformat(
+            created_at.replace('Z', '+00:00')) + timedelta(hours=8)).strftime("%m-%d %H:%M")
     except:
         created_time = created_at
 
@@ -92,8 +94,8 @@ def format_github_item_simple(item_data):
     if is_pull_request and state == 'closed' and item_data.get('pull_request', {}).get('merged_at'):
         merged_at = item_data['pull_request']['merged_at']
         try:
-            merged_time = datetime.fromisoformat(
-                merged_at.replace('Z', '+00:00')).strftime("%m-%d %H:%M")
+            merged_time = (datetime.fromisoformat(
+                merged_at.replace('Z', '+00:00')) + timedelta(hours=8)).strftime("%m-%d %H:%M")
             time_info = f"🕒 {created_time} | 🚀 {merged_time}"
         except:
             time_info = f"🕒 {created_time}"
@@ -143,7 +145,8 @@ def format_github_item_simple(item_data):
 def generate_msg_of_number(number: int):
     global gh
     print(f"Fetching issue #{number}")
-    response = gh.get(f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues/{number}")
+    response = gh.get(
+        f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues/{number}")
     if response.status_code == 200:
         issue = response.json()
         return format_github_item_simple(issue)
@@ -181,89 +184,91 @@ api = bot.run_backend(
     debug=False,
 )
 
-with open("./visited_event.json","r",encoding="utf-8") as f:
-    if f.read().strip()=="":
-        with open("./visited_event.json","w",encoding="utf-8") as f:
+def send_message(message: str):
+    api.send_group_msg_sync(group_id=int(
+        os.getenv("GHHELPER_TARGET_GROUP")), message=message)
+    # print("="*20+"\n"+message+"\n"+"="*20)
+
+
+with open("./visited_event.json", "r", encoding="utf-8") as f:
+    if f.read().strip() == "":
+        with open("./visited_event.json", "w", encoding="utf-8") as f:
             f.write("[]")
 
 
-latest_issue_num = max([issue["number"] for issue in gh.get(f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues").json()])
-with open("./latest_issue_num.txt","w",encoding="utf-8") as f:
+latest_issue_num = max([issue["number"] for issue in gh.get(
+    f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues").json()])
+with open("./latest_issue_num.txt", "w", encoding="utf-8") as f:
     f.write(str(latest_issue_num))
 
 while True:
-    events_resp=gh.get(f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues/events")
+    events_resp = gh.get(
+        f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues/events")
     if events_resp.status_code == 200:
         events = events_resp.json()
-        events_local = json.load(open("./visited_event.json", "r",encoding="utf-8"))
-        issue_event_map={}
+        events_local = json.load(
+            open("./visited_event.json", "r", encoding="utf-8"))
+        issue_event_map = {}
         for event in events:
             if event["id"] in events_local:
                 continue
-            message=""
-            if event["event"] in ["closed","reopened","merged"]:
-                # prefix={
-                #     "closed":"有 PR/Issue 关闭了\n\n",
-                #     "reopened":"有 PR/Issue 被重新打开了\n\n",
-                #     "merged":"有 PR 被合并了\n\n",
-                # }
-                # if issue := generate_msg_of_number(event["issue"]["number"]):
-                #     api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message=prefix[event["event"]]+issue)
-                closed_reasoned={
-                    None:"",
-                    "not_planned":"因非计划而",
-                    "duplicated":"因重复而",
-                    "completed":"因完成而",
-                }
-                message={'closed': closed_reasoned[event['state_reason']]+'关闭了',
-                    'reopened': '重新打开了', 'merged': '合并了'}[event['event']]
+            message = ""
+            if event["event"] in ["closed", "reopened", "merged"]:
+                closed_reasoned = {
+                    None: "",
+                    "not_planned": "因非计划而",
+                    "duplicate": "因重复而",
+                    "completed": "因完成而",
+            }
+                message = {'closed': closed_reasoned[event.get('state_reason',None)]+'关闭了',
+                         'reopened': '重新打开了', 'merged': '合并了'}[event['event']]
             if event['event'] == "labeled":
-            # and event['label']['name'] == "💡 Accept":
-            #     if issue := generate_msg_of_number(event["issue"]["number"]):
-            #         api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message="有 Enhancement Issue 被接受了\n\n"+issue)
-            # if event['event'] == "labeled" and event['label']['name'] == "⭕ Confirmed":
-            #     if issue := generate_msg_of_number(event["issue"]["number"]):
-            #         api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message="有 Bug Issue 被确认了\n\n"+issue)
-                label_specials={
-                    "💡 Accept":"接受了",
-                    "⭕ Confirmed":"确认了",
-                }
+                label_specials = {
+                    "💡 Accept": "接受了",
+                    "⭕ Confirmed": "确认了",
+            }
                 if event['label']['name'] in label_specials:
                     message = f"{label_specials[event['label']['name']]}"
                 else:
                     message = f"添加了标签 {event['label']['name']}"
-            if event['event']=="convert_to_draft":
-                message = f"转换为草稿状态"
-            if event['event']=="ready_for_review":
-                message = f"标记为准备好Review了"
-            
-            issue_event_map.setdefault(event["issue"]["number"],[]).append((event['actor']['login'],message))
+            if event['event'] =="convert_to_draft":
+                message = "转换为草稿状态"
+            if event['event'] =="ready_for_review":
+                message = "标记为准备好Review了"
+            if event['event'] =="marked_as_duplicate":
+                message = "标记为重复了"
+            if event['event']=="renamed":
+                message = f'将标题从 "{event["rename"]["from"]}" 改为 "{event["rename"]["to"]}"'
+            issue_event_map.setdefault(event["issue"]["number"], []).append((event['actor']['login'],message))
             events_local.append(event["id"])
         for issue_number in issue_event_map:
-            actor_event_maps={}
-            for actor,message in issue_event_map[issue_number]:
-                actor_event_maps.setdefault(actor,[]).append(message)
-            combined_messages=[]
+            actor_event_maps = {}
+            for actor, message in issue_event_map[issue_number]:
+                actor_event_maps.setdefault(actor, []).append(message)
+            combined_messages = []
             for actor in actor_event_maps:
-                cm = f"被 {event['actor']['login']} " + "，".join(actor_event_maps[actor])
+                cm = f"被 {event['actor']['login']} " + \
+                    "，".join(actor_event_maps[actor])
                 combined_messages.append(cm)
             if issue := generate_msg_of_number(issue_number):
-                api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message=f"#{issue_number} {','.join(combined_messages)}\n\n"+issue)
-                
-        with open("./visited_event.json","w",encoding="utf-8") as f:
+            # if issue := "ISSUE":
+                send_message(
+                    f"#{issue_number} {','.join(combined_messages)}\n\n"+issue)
+
+        with open("./visited_event.json", "w",encoding="utf-8") as f:
             f.write(json.dumps(events_local))
-    issues=gh.get(f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues")
+    issues = gh.get(f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues")
     if issues.status_code == 200:
         issues = issues.json()
-        latest_issue_num_local = int(open("./latest_issue_num.txt","r").read().strip())
+        latest_issue_num_local = int(open("./latest_issue_num.txt", "r").read().strip())
         new_latest_issue_num = latest_issue_num_local
         for issue in issues:
             if issue["number"] > latest_issue_num_local:
-                new_latest_issue_num = max(new_latest_issue_num,issue["number"])
+                new_latest_issue_num = max(new_latest_issue_num, issue["number"])
                 if issue := generate_msg_of_number(issue["number"]):
-                    api.send_group_msg_sync(group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),message="有新的 Issue/PR \n\n"+issue)
-        with open("./latest_issue_num.txt","w",encoding="utf-8") as f:
+                # if issue := "ISSUE":
+                    send_message(message="有新的 Issue/PR \n\n"+issue)
+        with open("./latest_issue_num.txt", "w",encoding="utf-8") as f:
             f.write(str(new_latest_issue_num))
-    
+
     time.sleep(60)
-    
