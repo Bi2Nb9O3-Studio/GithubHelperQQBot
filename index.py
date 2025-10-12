@@ -239,7 +239,8 @@ while True:
                 message = "标记为重复了"
             if event['event']=="renamed":
                 message = f'将标题从 "{event["rename"]["from"]}" 改为 "{event["rename"]["to"]}"'
-            issue_event_map.setdefault(event["issue"]["number"], []).append((event['actor']['login'],message))
+            if message:
+                issue_event_map.setdefault(event["issue"]["number"], []).append((event['actor']['login'],message))
             events_local.append(event["id"])
         for issue_number in issue_event_map:
             actor_event_maps = {}
