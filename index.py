@@ -3,12 +3,16 @@ import json
 import re
 import time
 from ncatbot.core import BotClient
+from ncatbot.core.api import BotAPI
+from ncatbot.core.helper.forward_constructor import ForwardConstructor
+from ncatbot.core.event.message_segment import Text, Image, File, Video
+from ncatbot.core.event.message_segment import MessageArray
 from ncatbot.plugin_system import on_message
 import os
 
 import requests
 import dotenv
-dotenv.load_dotenv()
+dotenv.load_dotenv(override=True)
 
 
 class SessionWithCatch(requests.Session):
@@ -19,6 +23,31 @@ class SessionWithCatch(requests.Session):
             print(f"HTTP Request failed: {e}")
             return requests.Response()
 
+class MessageSender:
+    def __init__(self,api: BotAPI):
+        self.api = api
+        self.messages=[]
+    def add_message(self,message:str,abstract:str):
+        self.messages.append({"message": message, "abstract": abstract})
+    def send_all_and_clear(self):
+        if len(self.messages)==0:
+            return
+        if len(self.messages)==1:
+            self.api.send_group_msg_sync(
+                group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),
+                message=self.messages[0]["message"],
+            )
+            self.messages.clear()
+            return
+        frc=ForwardConstructor("2426919699","GithubHelper")
+        summary=""
+        for msg in self.messages:
+            frc.attach_text(msg["message"])
+            summary+=msg["abstract"]+"\n"
+        self.api.send_group_msg_sync(
+            group_id=int(os.getenv("GHHELPER_TARGET_GROUP")), message=summary.strip())
+        self.api.post_forward_msg_sync(group_id=os.getenv("GHHELPER_TARGET_GROUP"),msg=frc.to_forward())
+        self.messages.clear()
 
 gh = SessionWithCatch()
 gh.headers.update({
@@ -184,10 +213,12 @@ api = bot.run_backend(
     debug=False,
 )
 
-def send_message(message: str):
-    api.send_group_msg_sync(group_id=int(
-        os.getenv("GHHELPER_TARGET_GROUP")), message=message)
+mss = MessageSender(api)
+def send_message(message: str,abstract):
+    # api.send_group_msg_sync(group_id=int(
+    #     os.getenv("GHHELPER_TARGET_GROUP")), message=message)
     # print("="*20+"\n"+message+"\n"+"="*20)
+    mss.add_message(message,abstract)
 
 
 with open("./visited_event.json", "r", encoding="utf-8") as f:
@@ -254,7 +285,7 @@ while True:
             if issue := generate_msg_of_number(issue_number):
             # if issue := "ISSUE":
                 send_message(
-                    f"#{issue_number} {','.join(combined_messages)}\n\n"+issue)
+                    f"#{issue_number} {','.join(combined_messages)}\n\n"+issue,f"#{issue_number} {','.join(combined_messages)}\n")
 
         with open("./visited_event.json", "w",encoding="utf-8") as f:
             f.write(json.dumps(events_local))
@@ -268,8 +299,10 @@ while True:
                 new_latest_issue_num = max(new_latest_issue_num, issue["number"])
                 if issue := generate_msg_of_number(issue["number"]):
                 # if issue := "ISSUE":
-                    send_message(message="有新的 Issue/PR \n\n"+issue)
+                    send_message(message="有新的 Issue/PR \n\n"+issue,abstract=f"有新的 Issue/PR #{issue['number']} #{issue['title']}")
         with open("./latest_issue_num.txt", "w",encoding="utf-8") as f:
             f.write(str(new_latest_issue_num))
+    
+    mss.send_all_and_clear()
 
     time.sleep(60)
