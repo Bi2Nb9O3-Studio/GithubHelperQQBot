@@ -43,7 +43,7 @@ class MessageSender:
         summary=""
         for msg in self.messages:
             frc.attach_text(msg["message"])
-            summary+=msg["abstract"]+"\n"
+            summary+=msg["abstract"]
         self.api.send_group_msg_sync(
             group_id=int(os.getenv("GHHELPER_TARGET_GROUP")), message=summary.strip())
         self.api.post_forward_msg_sync(group_id=os.getenv("GHHELPER_TARGET_GROUP"),msg=frc.to_forward())
@@ -188,7 +188,7 @@ bot = BotClient()
 async def handle_group_msg(ctx):
     if len(ctx.message.to_list())>1:
         return
-    print(ctx.group_id == os.getenv("GHHELPER_TARGET_GROUP"),ctx.group_id,type(ctx.group_id),type(os.getenv("GHHELPER_TARGET_GROUP")),os.getenv("GHHELPER_TARGET_GROUP"))
+    # print(ctx.group_id == os.getenv("GHHELPER_TARGET_GROUP"),ctx.group_id,type(ctx.group_id),type(os.getenv("GHHELPER_TARGET_GROUP")),os.getenv("GHHELPER_TARGET_GROUP"))
     if ctx.group_id == os.getenv("GHHELPER_TARGET_GROUP"):
         if ctx.message.to_list()[0]['type']!='text':
             return
