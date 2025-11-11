@@ -217,8 +217,8 @@ mss = MessageSender(api)
 def send_message(message: str,abstract):
     # api.send_group_msg_sync(group_id=int(
     #     os.getenv("GHHELPER_TARGET_GROUP")), message=message)
-    # print("="*20+"\n"+message+"\n"+"="*20)
-    mss.add_message(message,abstract)
+    print("="*20+"\n"+message+"\n"+"="*20)
+    # mss.add_message(message,abstract)
 
 
 with open("./visited_event.json", "r", encoding="utf-8") as f:
@@ -279,7 +279,7 @@ while True:
                 actor_event_maps.setdefault(actor, []).append(message)
             combined_messages = []
             for actor in actor_event_maps:
-                cm = f"被 {event['actor']['login']} " + \
+                cm = f"被 {actor} " + \
                     "，".join(actor_event_maps[actor])
                 combined_messages.append(cm)
             if issue := generate_msg_of_number(issue_number):
@@ -292,17 +292,20 @@ while True:
     issues = gh.get(f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues")
     if issues.status_code == 200:
         issues = issues.json()
-        latest_issue_num_local = int(open("./latest_issue_num.txt", "r").read().strip())
-        new_latest_issue_num = latest_issue_num_local
-        for issue in issues:
-            if issue["number"] > latest_issue_num_local:
-                new_latest_issue_num = max(new_latest_issue_num, issue["number"])
-                if issue := generate_msg_of_number(issue["number"]):
-                # if issue := "ISSUE":
-                    send_message(message="有新的 Issue/PR \n\n"+issue,abstract=f"有新的 Issue/PR #{issue['number']} #{issue['title']}")
-        with open("./latest_issue_num.txt", "w",encoding="utf-8") as f:
-            f.write(str(new_latest_issue_num))
+        try:
+            latest_issue_num_local = int(open("./latest_issue_num.txt", "r").read().strip())
+            new_latest_issue_num = latest_issue_num_local
+            for issue in issues:
+                if issue["number"] > latest_issue_num_local:
+                    new_latest_issue_num = max(new_latest_issue_num, issue["number"])
+                    if issue := generate_msg_of_number(issue["number"]):
+                    # if issue := "ISSUE":
+                        send_message(message="有新的 Issue/PR \n\n"+issue,abstract=f"有新的 Issue/PR #{issue['number']} #{issue['title']}")
+            with open("./latest_issue_num.txt", "w",encoding="utf-8") as f:
+                f.write(str(new_latest_issue_num))
+        except TypeError as e:
+            print("Error return value. "+repr(e)+"\n Current Issue Response:"+issues)
     
-    mss.send_all_and_clear()
+    # mss.send_all_and_clear()
 
     time.sleep(60)
