@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import json
 import re
 import time
+import markdown
 from ncatbot.core import BotClient
 from ncatbot.core.api import BotAPI
 from ncatbot.core.helper.forward_constructor import ForwardConstructor
@@ -9,7 +10,7 @@ from ncatbot.core.event.message_segment import Text, Image, File, Video
 from ncatbot.core.event.message_segment import MessageArray
 from ncatbot.plugin_system import on_message
 import os
-
+import imgkit
 import requests
 import dotenv
 dotenv.load_dotenv(override=True)
@@ -23,31 +24,36 @@ class SessionWithCatch(requests.Session):
             print(f"HTTP Request failed: {e}")
             return requests.Response()
 
+
 class MessageSender:
-    def __init__(self,api: BotAPI):
+    def __init__(self, api: BotAPI):
         self.api = api
-        self.messages=[]
-    def add_message(self,message:str,abstract:str):
+        self.messages = []
+
+    def add_message(self, message: str, abstract: str):
         self.messages.append({"message": message, "abstract": abstract})
+
     def send_all_and_clear(self):
-        if len(self.messages)==0:
+        if len(self.messages) == 0:
             return
-        if len(self.messages)==1:
+        if len(self.messages) == 1:
             self.api.send_group_msg_sync(
                 group_id=int(os.getenv("GHHELPER_TARGET_GROUP")),
                 message=self.messages[0]["message"],
             )
             self.messages.clear()
             return
-        frc=ForwardConstructor("2426919699","GithubHelper")
-        summary=""
+        frc = ForwardConstructor("2426919699", "GithubHelper")
+        summary = ""
         for msg in self.messages:
             frc.attach_text(msg["message"])
-            summary+=msg["abstract"]
+            summary += msg["abstract"]
         self.api.send_group_msg_sync(
             group_id=int(os.getenv("GHHELPER_TARGET_GROUP")), message=summary.strip())
-        self.api.post_forward_msg_sync(group_id=os.getenv("GHHELPER_TARGET_GROUP"),msg=frc.to_forward())
+        self.api.post_forward_msg_sync(group_id=os.getenv(
+            "GHHELPER_TARGET_GROUP"), msg=frc.to_forward())
         self.messages.clear()
+
 
 gh = SessionWithCatch()
 gh.headers.update({
@@ -181,26 +187,57 @@ def generate_msg_of_number(number: int):
         return format_github_item_simple(issue)
     return None
 
+
 bot = BotClient()
 
 
 @on_message
 async def handle_group_msg(ctx):
-    if len(ctx.message.to_list())>1:
+    if len(ctx.message.to_list()) > 1:
         return
     # print(ctx.group_id == os.getenv("GHHELPER_TARGET_GROUP"),ctx.group_id,type(ctx.group_id),type(os.getenv("GHHELPER_TARGET_GROUP")),os.getenv("GHHELPER_TARGET_GROUP"))
     if ctx.group_id == os.getenv("GHHELPER_TARGET_GROUP"):
-        if ctx.message.to_list()[0]['type']!='text':
+        if ctx.message.to_list()[0]['type'] != 'text':
             return
         # print(ctx.group_id)
-        result = re.findall(r"#[0-9]{1,}", ctx.message.to_list()[0]['data']['text'])
+        result = re.findall(
+            r"#[0-9]{1,}L", ctx.message.to_list()[0]['data']['text'])
+        result = list(set(result))
+        marked = []
         if result:
-            resp=""
+            print(result)
+            os.makedirs("./temp", exist_ok=True)
+            resp = MessageArray()
             for item in result:
-                number=int(item[1:])
+                marked.append(int(item[1:-1]))
+                number = int(item[1:-1])
+                print(f"Fetching issue #{number}")
+                response = gh.get(
+                    f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues/{number}")
+                if response.status_code == 200:
+                    response = response.json()
+                    markdown_content = f"`#{number}`\n\n# {response['title']}\n\nAuthor:{response['user']['login']}\n\nCreated at:{response['created_at']}\n\nUpdated at:{response['updated_at']}\n\n"+(
+                        "" if response['closed_at'] is None else f"Closed at:{response['closed_at']}\n\n")+response['body']
+                    imgkit.from_string(markdown.markdown(markdown_content), f'./temp/{number}.jpg', options={
+                        'width': '800',
+                        'encoding': "UTF-8",
+                        'quiet': ''
+                    })
+                    print(f"Generated image for issue #{number}")
+                    resp.add_image(Image(f'./temp/{number}.jpg'))
+            await ctx.reply(rtf=resp, at=False)
+        result = re.findall(
+            r"#[0-9]{1,}", ctx.message.to_list()[0]['data']['text'])
+        result = list(set(result))
+        if result:
+            resp = ""
+            for item in result:
+                if int(item[1:]) in marked:
+                    continue
+                number = int(item[1:])
                 if issue := generate_msg_of_number(number):
-                    resp+=f"{str(issue)}\n\n"
-            await ctx.reply(text=resp.strip(),at=False)
+                    resp += f"{str(issue)}\n\n"
+            await ctx.reply(text=resp.strip(), at=False)
         return
 api = bot.run_backend(
     remote_mode=True,
@@ -214,11 +251,13 @@ api = bot.run_backend(
 )
 
 mss = MessageSender(api)
-def send_message(message: str,abstract):
+
+
+def send_message(message: str, abstract):
     # api.send_group_msg_sync(group_id=int(
     #     os.getenv("GHHELPER_TARGET_GROUP")), message=message)
-    print("="*20+"\n"+message+"\n"+"="*20)
-    # mss.add_message(message,abstract)
+    # print("="*20+"\n"+message+"\n"+"="*20)
+    mss.add_message(message, abstract)
 
 
 with open("./visited_event.json", "r", encoding="utf-8") as f:
@@ -250,28 +289,31 @@ while True:
                     "not_planned": "因非计划而",
                     "duplicate": "因重复而",
                     "completed": "因完成而",
-            }
-                message = {'closed': closed_reasoned[event.get('state_reason',None)]+'关闭了',
-                         'reopened': '重新打开了', 'merged': '合并了'}[event['event']]
+                }
+                message = {'closed': closed_reasoned[event.get('state_reason', None)]+'关闭了',
+                           'reopened': '重新打开了', 'merged': '合并了'}[event['event']]
             if event['event'] == "labeled":
                 label_specials = {
                     "💡 Accept": "接受了",
                     "⭕ Confirmed": "确认了",
-            }
+                }
                 if event['label']['name'] in label_specials:
                     message = f"{label_specials[event['label']['name']]}"
                 else:
                     message = f"添加了标签 {event['label']['name']}"
-            if event['event'] =="convert_to_draft":
+            if event['event'] == "convert_to_draft":
                 message = "转换为草稿状态"
-            if event['event'] =="ready_for_review":
+            if event['event'] == "ready_for_review":
                 message = "标记为准备好Review了"
-            if event['event'] =="marked_as_duplicate":
+            if event['event'] == "marked_as_duplicate":
                 message = "标记为重复了"
-            if event['event']=="renamed":
+            if event['event'] == "renamed":
                 message = f'将标题从 "{event["rename"]["from"]}" 改为 "{event["rename"]["to"]}"'
+            if event['event'] == "review_requested":
+                message = f'请求 {event["requested_reviewer"]["login"]} 进行代码审查'
             if message:
-                issue_event_map.setdefault(event["issue"]["number"], []).append((event['actor']['login'],message))
+                issue_event_map.setdefault(event["issue"]["number"], []).append(
+                    (event['actor']['login'], message))
             events_local.append(event["id"])
         for issue_number in issue_event_map:
             actor_event_maps = {}
@@ -283,29 +325,34 @@ while True:
                     "，".join(actor_event_maps[actor])
                 combined_messages.append(cm)
             if issue := generate_msg_of_number(issue_number):
-            # if issue := "ISSUE":
+                # if issue := "ISSUE":
                 send_message(
-                    f"#{issue_number} {','.join(combined_messages)}\n\n"+issue,f"#{issue_number} {','.join(combined_messages)}\n")
+                    f"#{issue_number} {','.join(combined_messages)}\n\n"+issue, f"#{issue_number} {','.join(combined_messages)}\n")
 
-        with open("./visited_event.json", "w",encoding="utf-8") as f:
+        with open("./visited_event.json", "w", encoding="utf-8") as f:
             f.write(json.dumps(events_local))
-    issues = gh.get(f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues")
+    issues = gh.get(
+        f"https://api.github.com/repos/{os.getenv('GHHELPER_TARGET_REPO')}/issues")
     if issues.status_code == 200:
         issues = issues.json()
         try:
-            latest_issue_num_local = int(open("./latest_issue_num.txt", "r").read().strip())
+            latest_issue_num_local = int(
+                open("./latest_issue_num.txt", "r").read().strip())
             new_latest_issue_num = latest_issue_num_local
             for issue in issues:
                 if issue["number"] > latest_issue_num_local:
-                    new_latest_issue_num = max(new_latest_issue_num, issue["number"])
+                    new_latest_issue_num = max(
+                        new_latest_issue_num, issue["number"])
                     if issue := generate_msg_of_number(issue["number"]):
-                    # if issue := "ISSUE":
-                        send_message(message="有新的 Issue/PR \n\n"+issue,abstract=f"有新的 Issue/PR #{issue['number']} #{issue['title']}")
-            with open("./latest_issue_num.txt", "w",encoding="utf-8") as f:
+                        # if issue := "ISSUE":
+                        send_message(message="有新的 Issue/PR \n\n"+issue,
+                                     abstract=f"有新的 Issue/PR #{issue['number']} #{issue['title']}")
+            with open("./latest_issue_num.txt", "w", encoding="utf-8") as f:
                 f.write(str(new_latest_issue_num))
         except TypeError as e:
-            print("Error return value. "+repr(e)+"\n Current Issue Response:"+issues)
-    
-    # mss.send_all_and_clear()
+            print("Error return value. "+repr(e) +
+                  "\n Current Issue Response:"+issues)
+
+    mss.send_all_and_clear()
 
     time.sleep(60)

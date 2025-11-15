@@ -6,3 +6,4 @@ config.yaml
 visited_event.json
 latest_issue_num.txt
 .venv
+.vscode
