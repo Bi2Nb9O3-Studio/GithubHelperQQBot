@@ -13,6 +13,10 @@ import selenium.webdriver.common.by
 import selenium.webdriver.edge
 import selenium.webdriver.edge.options
 
+import dotenv
+dotenv.load_dotenv(override=True)
+
+
 class SessionWithCatch(requests.Session):
     def request(self, *args, **kwargs):
         try:
@@ -28,14 +32,16 @@ gh.headers.update({
     "Accept": "application/vnd.github.v3+json",
     "X-GitHub-Api-Version": "2022-11-28"
 })
+print(gh.headers)
 
 
-def ensure_path(path:str):
+def ensure_path(path: str):
     """确保路径存在"""
     if not os.path.exists(path):
         os.makedirs(path)
 
-def download_file(url: str, filename:str) -> bool:
+
+def download_file(url: str, filename: str) -> bool:
     requests.get(url, stream=True)
     with open(filename, "wb") as file:
         response = requests.get(url, stream=True)
@@ -44,6 +50,8 @@ def download_file(url: str, filename:str) -> bool:
                 file.write(chunk)
             return True
     return False
+
+
 def format_github_item_simple(item_data):
     """
     通用GitHub项目格式化 - 适配Issue和Pull Request的各种状态
@@ -157,6 +165,7 @@ def format_github_item_simple(item_data):
 
     return qq_message
 
+
 def generate_msg_of_number(number: int):
     global gh
     print(f"Fetching issue #{number}")
@@ -172,11 +181,12 @@ options = selenium.webdriver.EdgeOptions()
 options.add_argument("--headless=new")  # 新的无头模式
 driver = selenium.webdriver.Edge(options=options)
 
-def generate_img_from_html(html_str:str,target_id:str,number:int) -> bool:
+
+def generate_img_from_html(html_str: str, target_id: str, number: int) -> bool:
     ensure_path("./temp")
     # html_bs64 = base64.b64encode(html_str.encode('utf-8')).decode('utf-8')
     # driver.get("data:text/html;base64," + html_bs64)
-    with open(f"./temp/{number}.html","w",encoding="utf-8") as f:
+    with open(f"./temp/{number}.html", "w", encoding="utf-8") as f:
         f.write(html_str)
     driver.get("file:///"+os.path.abspath(f"./temp/{number}.html"))
     width = driver.execute_script(
@@ -186,6 +196,7 @@ def generate_img_from_html(html_str:str,target_id:str,number:int) -> bool:
     print(width, height)
     # 将浏览器的宽高设置成刚刚获取的宽高
     driver.set_window_size(width + 100, height + 100)
-    element = driver.find_elements(selenium.webdriver.common.by.By.CLASS_NAME, target_id)[0]
+    element = driver.find_elements(
+        selenium.webdriver.common.by.By.CLASS_NAME, target_id)[0]
     print(f"Taking screenshot for issue #{number}", element)
     return element.screenshot(f'./temp/{number}.png')

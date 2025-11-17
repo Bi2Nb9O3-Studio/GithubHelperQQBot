@@ -11,11 +11,7 @@ from ncatbot.core.event.message_segment import MessageArray
 from ncatbot.plugin_system import on_message
 import os
 import requests
-import dotenv
 from utils import *
-dotenv.load_dotenv(override=True)
-
-
 
 
 class MessageSender:
