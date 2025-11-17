@@ -77,7 +77,7 @@ async def handle_group_msg(ctx):
                     markdown_content = f"`#{number}`\n\n# {response['title']}\n\nAuthor:{response['user']['login']}\n\nCreated at:{response['created_at']}\n\nUpdated at:{response['updated_at']}\n\n"+(
                         "" if response['closed_at'] is None else f"Closed at:{response['closed_at']}\n\n")+response['body']
                     html_content = markdown.markdown(markdown_content, extensions=[
-                                                     'fenced_code', 'tables'])
+                                                     'fenced_code', 'tables', 'extra', 'pymdownx.tasklist'])
                     html_style = f"""<!DOCTYPE html>
 <html>
 <head>
